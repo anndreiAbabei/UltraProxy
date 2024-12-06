@@ -1,0 +1,25 @@
+﻿@{
+    ViewData["Title"] = "Home Page";
+}
+@model DownloadModel;
+
+<style>
+    .test {
+        display: block;
+        margin: 1em 0;
+    }
+    
+    input.test {
+        width: 100%;
+    }
+</style>
+
+<div>
+    @using (Html.BeginForm("Download", "Home", FormMethod.Post))
+    {
+        @Html.LabelFor(m => m.Url, htmlAttributes: new{ @class="test" })
+        @Html.TextBoxFor(m => m.Url, htmlAttributes: new{ @class="test" })
+        @Html.ValidationMessageFor(m => m.Url)
+        <button type="submit" class="test">Run</button>
+    }
+</div>
