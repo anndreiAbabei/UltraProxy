@@ -6,10 +6,12 @@ namespace UltraProxy.Controllers;
 
 public sealed class HomeController : Controller
 {
+    private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<HomeController> _logger;
 
-    public HomeController(ILogger<HomeController> logger)
+    public HomeController(IHttpClientFactory httpClientFactory, ILogger<HomeController> logger)
     {
+        _httpClientFactory = httpClientFactory;
         _logger = logger;
     }
 
@@ -25,7 +27,7 @@ public sealed class HomeController : Controller
         
         _logger.LogInformation("Downloading from {Url}", model.Url);
 
-        using var http = new HttpClient();
+        var http = _httpClientFactory.CreateClient();
         using var result = await http.GetAsync(model.Url, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         
         if(result.IsSuccessStatusCode)
@@ -43,8 +45,10 @@ public sealed class HomeController : Controller
 
         await result.Content.CopyToAsync(Response.Body, cancellationToken);
         await Response.Body.FlushAsync(cancellationToken);
+        
+        _logger.LogInformation("Proxy finished");
 
-        return Ok();
+        return new EmptyResult();
     }
 
     [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
