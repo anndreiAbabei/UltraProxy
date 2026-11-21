@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Net.Mime;
 using Microsoft.AspNetCore.Mvc;
 using UltraProxy.Models;
 
@@ -19,38 +20,56 @@ public sealed class HomeController : Controller
 
     public IActionResult Privacy() => View();
 
+    [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
+    public IActionResult Error() => View(new ErrorViewModel { RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier });
+
     [HttpPost]
     public async Task<IActionResult> Download(DownloadModel model, CancellationToken cancellationToken = default)
     {
         if (!ModelState.IsValid)
             return BadRequest(ModelState);
         
-        _logger.LogInformation("Downloading from {Url}", model.Url);
+        _logger.LogDownloadingFromUrl(model.Url);
 
         var http = _httpClientFactory.CreateClient();
         using var result = await http.GetAsync(model.Url, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         
         if(result.IsSuccessStatusCode)
-            _logger.LogInformation("Completed with {StatusCode}", result.StatusCode);
+            _logger.LogCompletedWithStatuscode(result.StatusCode);
         else
-            _logger.LogWarning("Failed with {StatusCode}, error {Error}", result.StatusCode, result.ReasonPhrase);
+            _logger.LogFailedWithStatuscodeErrorError(result.StatusCode, result.ReasonPhrase);
 
-        foreach (var header in result.Headers)
-            Response.Headers[header.Key] = header.Value.First();
+        Response.ContentType = MediaTypeNames.Application.Octet;
+        var upstreamDisposition = result.Content.Headers.ContentDisposition;
+        var fileName = GetSafeFileName(upstreamDisposition?.FileNameStar)
+                       ?? GetSafeFileName(upstreamDisposition?.FileName)
+                       ?? GetSafeFileName(Uri.UnescapeDataString(new Uri(model.Url).Segments[^1]))
+                       ?? "download.bin";
+        var attachment = new Microsoft.Net.Http.Headers.ContentDispositionHeaderValue("attachment");
+        attachment.SetHttpFileName(fileName);
+        Response.GetTypedHeaders().ContentDisposition = attachment;
+        Response.Headers.XContentTypeOptions = "nosniff";
         
-        foreach (var header in result.Content.Headers)
-            Response.Headers[header.Key] = header.Value.First();
-        
-        _logger.LogInformation("Copying response");
+        _logger.LogCopyingResponse();
 
         await result.Content.CopyToAsync(Response.Body, cancellationToken);
         await Response.Body.FlushAsync(cancellationToken);
         
-        _logger.LogInformation("Proxy finished");
+        _logger.LogProxyFinished();
 
         return new EmptyResult();
     }
 
-    [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
-    public IActionResult Error() => View(new ErrorViewModel { RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier });
+    private static string? GetSafeFileName(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        var name = Path.GetFileName(value.Trim('"').Replace('\\', '/')).Trim();
+        if (name.Length is 0 or > 255 || name is "." or ".." ||
+            name.Any(c => char.IsControl(c) || char.GetUnicodeCategory(c) == System.Globalization.UnicodeCategory.Format))
+            return null;
+
+        return name;
+    }
 }
